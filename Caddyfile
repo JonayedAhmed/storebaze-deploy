@@ -23,9 +23,9 @@
 # ============================================================================
 
 {
-    # Global options. Replace with the real ops email — used by Let's Encrypt
-    # to send cert-expiry warnings.
-    email REPLACE_ME_admin@storebaze.com
+    # Global options. Used by Let's Encrypt to send cert-expiry warnings
+    # (Caddy auto-renews; this is just a safety-net contact).
+    email storebazehq@gmail.com
 
     # DNS-01 challenge via Cloudflare for ALL automatic certs.
     # Works for both apex and wildcard, and is immune to CF proxy state.
