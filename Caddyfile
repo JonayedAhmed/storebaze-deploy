@@ -14,15 +14,22 @@
 #   *.storebaze.com (any other)        → merchant-fe
 #
 # TLS:
-#   Named hosts use HTTP-01 (default, no token).
-#   The *.storebaze.com wildcard needs DNS-01 via Cloudflare — set
-#   CLOUDFLARE_API_TOKEN in /root/.env on the server.
+#   ALL hosts use DNS-01 via Cloudflare (single global setting below).
+#   This means cert issuance works regardless of whether a record is
+#   DNS-only or proxied through Cloudflare — Let's Encrypt validates
+#   ownership via a DNS TXT record, never via HTTP.
+#   Requires CLOUDFLARE_API_TOKEN in /root/.env on the server
+#   (Zone:Read + DNS:Edit, scoped to storebaze.com).
 # ============================================================================
 
 {
     # Global options. Replace with the real ops email — used by Let's Encrypt
     # to send cert-expiry warnings.
     email REPLACE_ME_admin@storebaze.com
+
+    # DNS-01 challenge via Cloudflare for ALL automatic certs.
+    # Works for both apex and wildcard, and is immune to CF proxy state.
+    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 
     # Uncomment while testing to avoid Let's Encrypt rate limits:
     # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
@@ -58,11 +65,8 @@ control.storebaze.com {
 
 # ---------- Merchant frontend (wildcard tenant subdomains) ------------------
 # Catch-all for *.storebaze.com that didn't match the named hosts above.
-# Must come AFTER all named hosts.
+# Must come AFTER all named hosts. DNS-01 is handled globally above.
 *.storebaze.com {
-    tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-    }
     encode zstd gzip
     reverse_proxy merchant-fe:3000
 }
