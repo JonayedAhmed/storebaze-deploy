@@ -1,0 +1,68 @@
+# ============================================================================
+# StoreBaze production Caddyfile
+#
+# Upstreams (compose service names, NOT container names):
+#   backend          → Express API on :5000
+#   merchant-fe      → Next.js multi-tenant FE on :3000
+#   landing          → Next.js marketing site on :3000
+#   control-panel    → Next.js super-admin UI on :3000
+#
+# Public routing:
+#   storebaze.com, www.storebaze.com   → landing
+#   api.storebaze.com                  → backend
+#   control.storebaze.com              → control-panel
+#   *.storebaze.com (any other)        → merchant-fe
+#
+# TLS:
+#   Named hosts use HTTP-01 (default, no token).
+#   The *.storebaze.com wildcard needs DNS-01 via Cloudflare — set
+#   CLOUDFLARE_API_TOKEN in /root/.env on the server.
+# ============================================================================
+
+{
+    # Global options. Replace with the real ops email — used by Let's Encrypt
+    # to send cert-expiry warnings.
+    email REPLACE_ME_admin@storebaze.com
+
+    # Uncomment while testing to avoid Let's Encrypt rate limits:
+    # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+# ---------- Landing (apex + www) --------------------------------------------
+storebaze.com, www.storebaze.com {
+    encode zstd gzip
+    reverse_proxy landing:3000
+}
+
+# ---------- Backend API ------------------------------------------------------
+api.storebaze.com {
+    encode zstd gzip
+
+    # Stripe / DoorDash / Resend webhooks need the *raw* body. Caddy proxies
+    # streams unbuffered by default — no changes required.
+
+    reverse_proxy backend:5000
+
+    # Optional: serve /uploads/* directly from disk (skip the Node hop).
+    # handle /uploads/* {
+    #     root * /uploads
+    #     file_server
+    # }
+}
+
+# ---------- Control panel (super-admin) -------------------------------------
+control.storebaze.com {
+    encode zstd gzip
+    reverse_proxy control-panel:3000
+}
+
+# ---------- Merchant frontend (wildcard tenant subdomains) ------------------
+# Catch-all for *.storebaze.com that didn't match the named hosts above.
+# Must come AFTER all named hosts.
+*.storebaze.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    encode zstd gzip
+    reverse_proxy merchant-fe:3000
+}

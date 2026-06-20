@@ -1,0 +1,19 @@
+# Defensive gitignore for the deploy repo.
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Real production env files — NEVER commit these
+envs/**/*.env.production
+envs/**/.env.production
+
+# Local shell env loaded by compose
+.env
+.env.local
+.env.production
+
+# Allow templates
+!envs/**/*.env.production.template

@@ -1,0 +1,131 @@
+# ============================================================================
+# StoreBaze — production docker-compose
+#
+# Naming convention
+#   - service name (left column under `services:`) → short, used for internal
+#     DNS resolution between containers and `docker compose <cmd> <name>`
+#   - container_name → full branded name shown in `docker ps`
+#
+#   service          container_name                    GHCR image
+#   ---------------- --------------------------------- ----------------------------------------
+#   backend          storebaze-backend                 ghcr.io/<owner>/storebaze-merchant-mt-be
+#   merchant-fe      storebaze-merchant-frontend       ghcr.io/<owner>/storebaze-merchant-mt-fe
+#   landing          storebaze-landing                 ghcr.io/<owner>/storebaze-landing
+#   control-panel    storebaze-control-panel           ghcr.io/<owner>/control-panel
+#   caddy            storebaze-caddy                   (built locally — has DNS plugin)
+#
+# Daily commands
+#   docker compose pull && docker compose up -d        # full deploy
+#   docker compose logs -f backend                     # tail one service
+#   docker compose ps                                  # status
+#   docker compose up -d backend                       # restart one
+#   docker compose down                                # stop everything
+#
+# Required server-side (NOT in git):
+#   /root/.env                                              (compose vars below)
+#   /root/envs/storebaze-merchant-mt-be/.env.production
+#   /root/envs/storebaze-merchant-mt-fe/.env.production
+#   /root/envs/storebaze-landing/.env.production
+#   /root/envs/control-panel/.env.production
+#   /root/uploads/                                          (persistent volume)
+#
+# /root/.env must contain:
+#   GHCR_OWNER=jonayedahmed         # lowercase
+#   IMAGE_TAG=latest                # or a specific git sha for pinning
+#   CLOUDFLARE_API_TOKEN=cf_xxx     # for the *.storebaze.com wildcard cert
+# ============================================================================
+
+name: storebaze
+
+services:
+  # ============================================================== CADDY =====
+  caddy:
+    build:
+      context: ./caddy
+    image: storebaze-caddy:local
+    container_name: storebaze-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    environment:
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - /root/uploads:/uploads:ro     # optional direct-serve of upload files
+    depends_on:
+      - backend
+      - merchant-fe
+      - landing
+      - control-panel
+    networks:
+      - storebaze_net
+
+  # ============================================================ BACKEND =====
+  backend:
+    image: ghcr.io/${GHCR_OWNER}/storebaze-merchant-mt-be:${IMAGE_TAG:-latest}
+    container_name: storebaze-backend
+    restart: unless-stopped
+    env_file:
+      - /root/envs/storebaze-merchant-mt-be/.env.production
+    volumes:
+      # Backend code reads from path.join(__dirname, '../uploads') → /uploads
+      - /root/uploads:/uploads
+    expose:
+      - "5000"
+    networks:
+      - storebaze_net
+
+  # ============================================== MERCHANT FRONTEND (FE) ===
+  merchant-fe:
+    image: ghcr.io/${GHCR_OWNER}/storebaze-merchant-mt-fe:${IMAGE_TAG:-latest}
+    container_name: storebaze-merchant-frontend
+    restart: unless-stopped
+    env_file:
+      - /root/envs/storebaze-merchant-mt-fe/.env.production
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+    networks:
+      - storebaze_net
+
+  # ============================================================ LANDING =====
+  landing:
+    image: ghcr.io/${GHCR_OWNER}/storebaze-landing:${IMAGE_TAG:-latest}
+    container_name: storebaze-landing
+    restart: unless-stopped
+    env_file:
+      - /root/envs/storebaze-landing/.env.production
+    expose:
+      - "3000"
+    networks:
+      - storebaze_net
+
+  # ====================================================== CONTROL PANEL =====
+  control-panel:
+    image: ghcr.io/${GHCR_OWNER}/control-panel:${IMAGE_TAG:-latest}
+    container_name: storebaze-control-panel
+    restart: unless-stopped
+    env_file:
+      - /root/envs/control-panel/.env.production
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+    networks:
+      - storebaze_net
+
+# ============================================================== VOLUMES =====
+volumes:
+  caddy_data:
+  caddy_config:
+
+# ============================================================= NETWORKS =====
+networks:
+  storebaze_net:
+    driver: bridge
+    name: storebaze_net
