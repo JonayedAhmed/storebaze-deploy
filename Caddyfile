@@ -12,14 +12,22 @@
 #   api.storebaze.com                  → backend
 #   control.storebaze.com              → control-panel
 #   *.storebaze.com (any other)        → merchant-fe
+#   {merchant_custom_domain} (Phase 8) → merchant-fe (on-demand TLS, HTTP-01,
+#                                         gated by backend ask endpoint)
 #
 # TLS:
-#   ALL hosts use DNS-01 via Cloudflare (single global setting below).
-#   This means cert issuance works regardless of whether a record is
-#   DNS-only or proxied through Cloudflare — Let's Encrypt validates
-#   ownership via a DNS TXT record, never via HTTP.
+#   storebaze.com hosts use DNS-01 via Cloudflare (global setting below)
+#   — we own the zone, and DNS-01 works for both apex and the *.storebaze.com
+#   wildcard regardless of CF proxy state.
+#
+#   Merchant custom domains use on-demand TLS (HTTP-01), because we don't
+#   control the merchant's DNS zone. Caddy asks the backend before issuing a
+#   cert (see on_demand_tls.ask below) — this is what stops attackers from
+#   pointing random hostnames at us and burning Let's Encrypt rate limits.
+#   Requires port 80 to stay open on the droplet for HTTP-01 challenges.
+#
 #   Requires CLOUDFLARE_API_TOKEN in /root/.env on the server
-#   (Zone:Read + DNS:Edit, scoped to storebaze.com).
+#   (Zone:Read + DNS:Edit, scoped to storebaze.com) for the DNS-01 path.
 # ============================================================================
 
 {
@@ -27,9 +35,19 @@
     # (Caddy auto-renews; this is just a safety-net contact).
     email storebazehq@gmail.com
 
-    # DNS-01 challenge via Cloudflare for ALL automatic certs.
-    # Works for both apex and wildcard, and is immune to CF proxy state.
+    # DNS-01 challenge via Cloudflare for storebaze.com hosts (apex +
+    # wildcard). Caddy auto-falls back to HTTP-01 for hosts whose zone we
+    # don't control — i.e. merchant custom domains served by the :443
+    # on-demand block below.
     acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+
+    # On-demand TLS gate for merchant custom domains (Phase 8). Caddy calls
+    # this endpoint over the internal Docker network before attempting to
+    # issue a cert for an unknown SNI. Backend returns 200 only if the host
+    # is registered to a verified, feature-enabled merchant.
+    on_demand_tls {
+        ask http://backend:5000/api/public/domain-allowed
+    }
 
     # Uncomment while testing to avoid Let's Encrypt rate limits:
     # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
@@ -67,6 +85,19 @@ control.storebaze.com {
 # Catch-all for *.storebaze.com that didn't match the named hosts above.
 # Must come AFTER all named hosts. DNS-01 is handled globally above.
 *.storebaze.com {
+    encode zstd gzip
+    reverse_proxy merchant-fe:3000
+}
+
+# ---------- Merchant custom domains (Phase 8, on-demand TLS) ----------------
+# Catches any hostname not matched by the named blocks above. Caddy asks the
+# backend whether the host belongs to a verified merchant before issuing a
+# cert via HTTP-01 (we don't control merchant DNS, so DNS-01 isn't an option).
+# MUST be the last site block.
+:443 {
+    tls {
+        on_demand
+    }
     encode zstd gzip
     reverse_proxy merchant-fe:3000
 }

@@ -110,10 +110,13 @@ Pointing all of these at the droplet's IP:
 | A | `api` | `<droplet-ip>` | DNS only |
 | A | `control` | `<droplet-ip>` | DNS only |
 | A | `*` | `<droplet-ip>` | DNS only |
+| A | `ingress` | `<droplet-ip>` | DNS only (used as the CNAME target merchants point their custom domains at — see §5.7) |
 
 > Keep Cloudflare proxy **OFF** (DNS only) initially. Caddy handles HTTPS
 > end-to-end. You can re-enable the orange cloud later for DDoS protection
-> with full-strict mode if desired.
+> with full-strict mode if desired. The `ingress` record must stay DNS only
+> so merchant DNS resolves directly to the droplet (HTTP-01 challenges and
+> SNI both depend on this).
 
 ### 3.4 Cloudflare API token
 
@@ -314,6 +317,55 @@ git push origin main      # in storebaze-deploy
 ssh root@droplet "cd /root/storebaze-deploy && git pull && docker compose up -d"
 ```
 
+### 5.7 Custom merchant domains (Phase 8 — `on_demand_tls`)
+
+Phase 8 lets a Pro/Enterprise merchant serve their storefront at their own
+domain (e.g. `yourbrand.com`). Caddy issues the cert on demand via HTTP-01,
+gated by the backend ask endpoint `/api/public/domain-allowed`.
+
+**One-time setup** (only required the first time Phase 8 ships to a droplet):
+
+1. Confirm the `ingress.storebaze.com` A record from §3.3 exists and points
+   at the droplet IP (DNS only / grey cloud).
+2. Confirm port 80 is open in the droplet firewall (already required for
+   the existing HTTP→HTTPS redirects; HTTP-01 reuses it).
+3. Pull the updated `Caddyfile` and reload Caddy in place — no image rebuild
+   needed, the Caddyfile is bind-mounted:
+
+   ```bash
+   ssh root@droplet
+   cd /root/storebaze-deploy
+   git pull
+   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
+   docker compose logs --tail 50 caddy   # confirm no parse errors
+   ```
+
+   If `caddy reload` fails (rare — only on Caddyfile syntax errors), fall
+   back to `docker compose restart caddy`.
+
+**Smoke test** with a throwaway domain:
+
+1. In Cloudflare/registrar for a test domain, add a CNAME:
+   `@ → ingress.storebaze.com` (or A → `<droplet-ip>` if your DNS host
+   can't flatten CNAMEs at apex).
+2. As a merchant on a Pro/Enterprise plan, go to `/admin/settings/domain`,
+   add the domain, verify the ownership TXT.
+3. Hit `https://<test-domain>` — first request takes ~5–10 s while Caddy
+   completes the HTTP-01 challenge. Subsequent requests are instant.
+4. Backend log should show `GET /api/public/domain-allowed?domain=...` → 200.
+   Caddy log should show `obtained certificate` once.
+
+**Rollback** (disable the Phase 8 branch without reverting the FE/BE):
+
+Comment out the `:443 { ... on_demand ... }` block at the bottom of
+`Caddyfile`, `git push`, and re-run the reload step above. Existing
+storebaze.com hosts and `*.storebaze.com` are unaffected.
+
+> Issued merchant certs persist in the `caddy_data` named volume — they're
+> auto-renewed (~60 days in) as long as the domain still resolves to us and
+> the ask endpoint still returns 200. If a merchant removes their domain,
+> the cert sits idle until expiry; harmless.
+
 ---
 
 ## 6. Day-2 operations
@@ -416,6 +468,17 @@ that has `read:packages`.
 → The webhook URL on Stripe must be `https://api.storebaze.com/api/webhooks/...`
   AND the matching secret in `/root/envs/storebaze-merchant-mt-be/.env.production`
   must come from Stripe's dashboard for the **live** endpoint, not test.
+
+**Custom merchant domain stuck without HTTPS (Phase 8)**
+→ Tail `docker compose logs -f caddy` while hitting the domain. Common causes:
+  1. Backend ask endpoint returning 404 — the domain isn't `customDomainStatus='verified'`
+     yet, or the merchant's plan lost the `customDomain` feature flag.
+     Hit `https://api.storebaze.com/api/public/domain-allowed?domain=<host>`
+     directly to confirm.
+  2. Merchant's DNS not pointing at `ingress.storebaze.com` (or the droplet IP).
+     `dig +short <host>` should resolve to the droplet IP.
+  3. Port 80 blocked at the droplet firewall — HTTP-01 can't complete.
+     `curl -I http://<host>/.well-known/acme-challenge/test` should hit Caddy.
 
 ---
 
