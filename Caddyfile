@@ -35,11 +35,10 @@
     # (Caddy auto-renews; this is just a safety-net contact).
     email storebazehq@gmail.com
 
-    # DNS-01 challenge via Cloudflare for storebaze.com hosts (apex +
-    # wildcard). Caddy auto-falls back to HTTP-01 for hosts whose zone we
-    # don't control — i.e. merchant custom domains served by the :443
-    # on-demand block below.
-    acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    # NOTE (2026-09-02, matches production): Cloudflare DNS-01 is scoped to
+    # the *.storebaze.com site block below — NOT global — so StoreBaze's
+    # Cloudflare credentials are never used to attempt challenges for
+    # merchant-owned custom domains (those use on-demand TLS + HTTP-01).
 
     # On-demand TLS gate for merchant custom domains (Phase 8). Caddy calls
     # this endpoint over the internal Docker network before attempting to
@@ -83,8 +82,12 @@ control.storebaze.com {
 
 # ---------- Merchant frontend (wildcard tenant subdomains) ------------------
 # Catch-all for *.storebaze.com that didn't match the named hosts above.
-# Must come AFTER all named hosts. DNS-01 is handled globally above.
+# Must come AFTER all named hosts. DNS-01 via Cloudflare is scoped HERE
+# (we own this zone; the wildcard cert requires DNS-01).
 *.storebaze.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
     encode zstd gzip
     reverse_proxy merchant-fe:3000
 }
