@@ -37,6 +37,10 @@ docker compose up -d
 ssh server "cd /root/storebaze-deploy && git pull && docker compose pull && docker compose up -d"
 ```
 
+> GitHub Actions unavailable? Do **not** use the command above — see
+> [DEPLOYMENT.md §11](DEPLOYMENT.md#11-temporary-manual-deployment-fallback--github-actions-unavailable)
+> (temporary manual fallback). CI/CD stays the default once it is back.
+
 ## Branching
 
 - `main` → production

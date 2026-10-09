@@ -4,6 +4,12 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
+> **Status, 2026-10-09 — GitHub Actions is unavailable (account billing
+> lock).** Until it is back, deploy with the temporary manual fallback in
+> [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
+> The GitHub Actions → GHCR → production deployment described in §5 remains
+> the normal/default method. Remove this note when CI/CD is back (§11.9).
+
 ---
 
 ## 1. Architecture overview
@@ -248,6 +254,9 @@ If you see `obtained certificate` in the Caddy logs, you're live. Visit
 ---
 
 ## 5. The update flow (the whole point)
+
+> This is the normal/default flow. If GitHub Actions cannot build images, use
+> the temporary fallback in §11 instead of §5.1 — and only until Actions is back.
 
 ### 5.1 Code change to a service
 
@@ -505,3 +514,350 @@ docker compose restart <svc>   # bounce one service
 #   control-panel    storebaze-control-panel
 #   caddy            storebaze-caddy
 ```
+
+---
+
+## 11. Temporary manual deployment fallback — GitHub Actions unavailable
+
+> **The GitHub Actions → GHCR → production deployment remains the
+> normal/default deployment method. Once GitHub billing is restored, stop
+> using the manual fallback and resume CI/CD** (§11.9).
+
+**Status.** Written 2026-10-09 from a read-only inspection of production. The
+procedure has **not yet been run end to end** — §11.2 lists what is verified
+and what the first run still has to prove. Update this line after the first
+run.
+
+### 11.1 Why this exists
+
+The GitHub account is billing-locked, so the `build-and-push.yml` workflows do
+not run. `git push` still works, but no image is built, so GHCR's `:latest`
+stays at the last image Actions produced and `docker compose pull` keeps
+returning it. State on 2026-10-09:
+
+| Service | Last commit CI built (= GHCR `:latest`) | Built (UTC) | Commits on `main` since |
+|---|---|---|---|
+| backend | `23993d2` | 2026-10-01 00:39 | 32 |
+| merchant-fe | `91554eb` | 2026-10-01 00:40 | 35 |
+| landing | `d67c46f` | 2026-09-26 17:43 | 4 |
+| control-panel | `d723576` | 2026-09-17 00:53 | 0 — already current |
+
+The fallback replaces **only** the "Actions builds the image and pushes it to
+GHCR" step. The Dockerfiles, build args, image names, compose file,
+`IMAGE_TAG` pin (§5.2), env files and Caddy are all used unchanged.
+
+```
+normal:    git push ─► Actions build ─► GHCR ─► docker compose pull ─► docker compose up -d
+fallback:  git push ─► laptop build  ─► docker save | ssh | docker load ─► docker compose up -d
+```
+
+### 11.2 The method, and why this one
+
+Build each changed service **on the laptop**, from the exact commit on
+`origin/main`, for `linux/amd64`, with that service's own Dockerfile. Stream
+the image to the droplet with `docker save | ssh | docker load`. Give all four
+services one release tag and pin `IMAGE_TAG` to it.
+
+Alternatives looked at and not used:
+
+- **Building on the droplet.** It has 2 vCPU and 2 GB RAM (not the 4 GB of
+  §3.2) and the running containers have no memory limits, so a `next build`
+  there competes with production for memory. The service repos are private and
+  the droplet has no GitHub credentials, so it would also need a new secret.
+- **Pushing to GHCR by hand.** Needs a write-scoped token, and whether a
+  billing-locked account accepts package pushes is unknown (not tested —
+  nothing was pushed). It still needs the same laptop build.
+- **Re-tagging a manual build as `:latest`.** The next `docker compose pull`
+  would silently put the stale GHCR image back. A separate release tag makes
+  that pull fail loudly instead.
+
+| Verified on 2026-10-09 (read-only) | Not yet exercised — the first run proves it |
+|---|---|
+| GHCR `:latest` is the same digest as the commits in §11.1; newer commits have no image; pulls with the droplet's existing login still work | Build time and stability of the emulated `linux/amd64` build on an Apple Silicon laptop |
+| The four `NEXT_PUBLIC_*` values in the droplet's merchant-fe env file are the ones baked into the image running today (Stripe key compared by hash) | The `docker save` → `docker load` round trip between Docker Desktop and the droplet |
+| `/root/.env` has `IMAGE_TAG=latest`; with a release tag compose resolves all four service images to it and leaves `storebaze-caddy:local` alone (`config --images`) | The `IMAGE_TAG` switch and targeted `up -d` (flags checked against Compose v5.1.4's help, not run) |
+| The `prod` / `penv` helpers and every read-only check in §11.6–11.7 return what this section says | |
+| Recreating backend + merchant-fe does not restart Caddy (observed: both recreated 2026-10-09, Caddy up since June) | |
+| No cron job, timer or watcher on the droplet pulls or restarts containers | |
+
+### 11.3 Prerequisites
+
+- Docker Desktop running on the laptop. On Apple Silicon: enable **Use Rosetta
+  for x86_64/amd64 emulation** and give Docker at least 8 GB of memory — the
+  images must be `linux/amd64`.
+- Clones of the service repos side by side, with the commits to deploy
+  **already pushed to `origin/main`**. Only commits on `origin/main` are built,
+  so CI later rebuilds the same or newer code.
+- SSH access to the droplet as `root`.
+- No GitHub token is needed and nothing is pushed to GHCR.
+
+Facts about production this procedure depends on (2026-10-09):
+
+- There is no `/root/update.sh` on the droplet (§3.9 was never done). Deploys
+  are run by hand from `/root/storebaze-deploy`.
+- `/root/storebaze-deploy` is three commits behind `origin/main` and has a
+  hand-edited `Caddyfile` whose directives equal the current repo version.
+  `docker-compose.yml` is byte-identical to the repo's. **Do not `git pull`
+  there during the fallback.**
+- `docker compose ps` shows the three Next.js containers as `(unhealthy)` at
+  all times: Next's standalone server listens on the container's network
+  address only, and the image `HEALTHCHECK` probes `127.0.0.1`. They serve
+  traffic normally. Only the backend's health status means anything.
+
+### 11.4 Build (laptop — touches nothing in production)
+
+Run from the directory that holds the service clones. The only contact with
+the droplet is reading the public `NEXT_PUBLIC_*` build values.
+
+```bash
+prod() { ssh root@droplet "$@"; }      # your usual SSH command to the droplet
+penv() { prod "grep -E '^$2=' /root/envs/$1/.env.production | head -1 | cut -d= -f2-"; }
+O=ghcr.io/jonayedahmed
+REL=manual-$(date -u +%Y%m%d-%H%M); echo "$REL"    # set ONCE per release; note it down
+
+# build <repo> [extra docker args] — builds origin/main of <repo> as $O/<repo>:$REL
+build() {
+  local repo=$1; shift
+  git -C "$repo" fetch origin || return 1
+  local sha; sha=$(git -C "$repo" rev-parse origin/main) || return 1
+  local ctx; ctx=$(mktemp -d) || return 1
+  git -C "$repo" archive "$sha" | tar -x -C "$ctx" || return 1
+  docker buildx build "$ctx" --platform linux/amd64 --provenance=false --sbom=false \
+    --label "org.opencontainers.image.revision=$sha" -t "$O/$repo:$REL" --load "$@" || return 1
+  rm -rf "$ctx"; echo "built $O/$repo:$REL from $sha"
+}
+```
+
+`git archive` gives the build the same input as the Actions checkout: the
+tracked files of one commit, no untracked or local files, submodules empty.
+The revision label records which commit a container runs.
+
+Build only the services that changed (`git log <last deployed>..origin/main`).
+Backend and merchant-fe share hand-mirrored contracts: when both changed,
+build and deploy both in the same release.
+
+```bash
+# --- backend: no build args ---------------------------------------------------
+build storebaze-merchant-mt-be
+
+# --- merchant-fe: the four values next build inlines --------------------------
+FE_BASE_URL=$(penv storebaze-merchant-mt-fe NEXT_PUBLIC_BASE_URL)
+FE_DOMAIN=$(penv storebaze-merchant-mt-fe NEXT_PUBLIC_PLATFORM_DOMAIN)
+FE_LANDING_PORT=$(penv storebaze-merchant-mt-fe NEXT_PUBLIC_LANDING_PORT)
+FE_STRIPE_PK=$(penv storebaze-merchant-mt-fe NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+echo "$FE_BASE_URL | $FE_DOMAIN | port='$FE_LANDING_PORT' | stripe key ${FE_STRIPE_PK:0:8}… (${#FE_STRIPE_PK} chars)"
+# STOP unless: https://api.storebaze.com | storebaze.com | port='' | a pk_ key of the usual length.
+# An empty value here (for example a failed ssh) would build a broken frontend.
+
+build storebaze-merchant-mt-fe \
+  --build-arg NEXT_PUBLIC_BASE_URL="$FE_BASE_URL" \
+  --build-arg NEXT_PUBLIC_PLATFORM_DOMAIN="$FE_DOMAIN" \
+  --build-arg NEXT_PUBLIC_LANDING_PORT="$FE_LANDING_PORT" \
+  --build-arg NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="$FE_STRIPE_PK"
+
+# both counts must be greater than 0 (the values really are in the bundle)
+docker run --rm --platform linux/amd64 --entrypoint sh "$O/storebaze-merchant-mt-fe:$REL" -c \
+  'echo "api url in $(grep -rlF "$0" /app/.next | wc -l) files, stripe key in $(grep -rlF "$1" /app/.next | wc -l) files"' \
+  "$FE_BASE_URL" "$FE_STRIPE_PK"
+
+# --- landing ------------------------------------------------------------------
+L_API=$(penv storebaze-landing NEXT_PUBLIC_API_URL)
+L_STORE=$(penv storebaze-landing NEXT_PUBLIC_STOREFRONT_BASE)
+L_DOMAIN=$(penv storebaze-landing NEXT_PUBLIC_PLATFORM_DOMAIN)
+echo "$L_API | $L_STORE | $L_DOMAIN"               # STOP unless all three are set
+build storebaze-landing \
+  --build-arg NEXT_PUBLIC_API_URL="$L_API" \
+  --build-arg NEXT_PUBLIC_STOREFRONT_BASE="$L_STORE" \
+  --build-arg NEXT_PUBLIC_PLATFORM_DOMAIN="$L_DOMAIN"
+
+# --- control-panel (only when it has new commits) -----------------------------
+C_BASE=$(penv control-panel NEXT_PUBLIC_BASE_URL)
+C_NAME=$(penv control-panel NEXT_PUBLIC_PLATFORM_NAME)
+echo "$C_BASE | $C_NAME"                           # STOP unless both are set
+build control-panel \
+  --build-arg NEXT_PUBLIC_BASE_URL="$C_BASE" \
+  --build-arg NEXT_PUBLIC_PLATFORM_NAME="$C_NAME"
+```
+
+The build values come from the droplet's env files, not from §3.1 or the
+templates: those files are what the running bundle was verified against. Never
+copy an env file to the laptop and never read anything but `NEXT_PUBLIC_*`
+keys this way — those are public (they ship in the browser bundle); the rest
+of each file is secret.
+
+If the emulated build is too slow or crashes, run the same `build` on any
+x86-64 Linux machine with Docker and at least 4 GB of RAM (drop `--platform`).
+**Not on the production droplet.**
+
+### 11.5 Transfer (laptop → droplet image store; nothing restarts)
+
+```bash
+for r in storebaze-merchant-mt-be storebaze-merchant-mt-fe storebaze-landing; do   # what you built
+  docker save "$O/$r:$REL" | gzip | prod 'gunzip | docker load' || break
+done
+```
+
+A loaded image is inert until a container is created from it. An interrupted
+transfer loads nothing.
+
+### 11.6 Deploy (droplet) — only with explicit approval for this deploy
+
+```bash
+ssh root@droplet
+cd /root/storebaze-deploy
+O=ghcr.io/jonayedahmed
+REL=manual-YYYYMMDD-HHMM                    # the value from §11.4
+PREV=$(grep '^IMAGE_TAG=' /root/.env | cut -d= -f2); echo "rollback tag: $PREV"   # note it down
+```
+
+**1. Check what was loaded** — platform, commit, and that it executes here:
+
+```bash
+for r in storebaze-merchant-mt-be storebaze-merchant-mt-fe storebaze-landing; do   # what you built
+  docker image inspect --format "$r {{.Os}}/{{.Architecture}} rev={{index .Config.Labels \"org.opencontainers.image.revision\"}}" $O/$r:$REL
+  docker run --rm --network none --entrypoint node $O/$r:$REL --version
+done
+# STOP unless every line says linux/amd64, the commit you built, and a Node version follows.
+```
+
+**2. Complete the release tag.** `IMAGE_TAG` is shared by all four services
+(§5.2), so every service you did *not* rebuild gets the release tag pointed at
+the image it already runs:
+
+```bash
+docker tag $O/control-panel:$PREV $O/control-panel:$REL        # repeat per unchanged service
+
+for r in storebaze-merchant-mt-be storebaze-merchant-mt-fe storebaze-landing control-panel; do
+  docker image inspect $O/$r:$REL >/dev/null 2>&1 && echo "ok       $r" || echo "MISSING  $r"
+done
+# STOP on any MISSING.
+```
+
+**3. Switch the tag and recreate only what changed.** Backend first; the
+frontends only once it answers.
+
+```bash
+sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$REL/" /root/.env      # edit /root/.env itself, never the symlink
+docker compose config --images                          # four ghcr images ending :$REL + storebaze-caddy:local
+
+docker compose --dry-run up -d --no-deps --pull never backend    # optional preview: backend only
+
+docker compose up -d --no-deps --pull never backend
+for i in $(seq 1 40); do curl -fsS -m 5 https://api.storebaze.com/api/health && break; sleep 3; done; echo
+docker compose logs --tail 40 backend
+# STOP and roll back (§11.8) if health never answers or the log shows a crash loop.
+
+docker compose up -d --no-deps --pull never merchant-fe landing
+```
+
+Each recreated container is unavailable for a few seconds and Caddy answers
+502 for its hosts meanwhile — the same as a normal deploy. `--no-deps` plus
+explicit service names keep Caddy and the unchanged services untouched;
+`--pull never` keeps the registry out of it.
+
+While the fallback is active:
+
+- `docker compose pull` fails with "not found" for the `manual-…` tag. That is
+  the guard working, not a fault. Nothing changes.
+- A plain `docker compose up -d` is safe, but restarts the unchanged app
+  containers once (their image name changed, not their image).
+- Never `docker compose down`, never `--build`, never name `caddy`, never
+  `docker image prune -a` / `docker system prune` — the previous images are
+  the rollback.
+
+### 11.7 Verify
+
+On the droplet:
+
+```bash
+docker compose ps        # five containers Up; backend (healthy); the Next ones say (unhealthy) — see §11.3
+for c in storebaze-backend storebaze-merchant-frontend storebaze-landing storebaze-control-panel; do
+  docker inspect --format '{{.Name}} {{.Config.Image}} rev={{index .Config.Labels "org.opencontainers.image.revision"}} restarts={{.RestartCount}}' $c
+done                     # rebuilt services: :$REL, the commit you built, restarts=0
+docker inspect --format 'caddy started {{.State.StartedAt}}' storebaze-caddy    # unchanged — Caddy was not touched
+docker compose logs --since 10m backend | grep -iE 'error|unhandled|crash' | tail
+ls /root/uploads && du -sh /root/uploads                                         # still there
+```
+
+From anywhere:
+
+```bash
+# hosts that do not depend on a store
+for u in https://storebaze.com/ https://www.storebaze.com/ https://api.storebaze.com/api/health \
+         https://control.storebaze.com/; do
+  printf '%-46s ' "$u"; curl -sS -o /dev/null -m 20 -w '%{http_code}\n' "$u"
+done
+# expect 200, 200, 200, 307 (to /login)
+
+# storefronts — read the page, not the status
+for s in demo-organic demo-minimal demo-elegant demo-tech; do
+  printf '%-14s api %s  page: ' "$s" \
+    "$(curl -sS -o /dev/null -m 20 -w '%{http_code}' -H "X-Store-Domain: $s" https://api.storebaze.com/api/site-settings)"
+  curl -sS -m 20 "https://$s.storebaze.com/" | grep -oE '<title>[^<]*</title>|Store Not Found' | sort -u | tr '\n' ' '; echo
+done
+# expect "api 200" and the store's own <title> on every line — never "Store Not Found"
+```
+
+A storefront answers **200 even when its store does not exist** (it renders a
+"Store Not Found" page titled "Online Store"), so a status code proves nothing
+about a store. The API is the honest signal: an unknown store is
+`404 STORE_NOT_FOUND`.
+
+Then in a browser: a storefront page, a merchant login to `/admin`, the Page
+Builder opening a page, and the control-panel login.
+
+### 11.8 Rollback
+
+The previous images are still in the droplet's image store under their own tag
+— nothing in this procedure deletes or re-tags them — so rollback is the same
+switch in reverse and takes seconds:
+
+```bash
+cd /root/storebaze-deploy
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=<PREV>/' /root/.env    # `latest` after the first manual release
+docker compose up -d --no-deps --pull never backend merchant-fe landing
+```
+
+Then repeat §11.7. `:latest` is also still on GHCR, so
+`docker compose pull` (with `IMAGE_TAG=latest`) restores it if the local copy
+was ever removed.
+
+Rollback returns the **code**, not the data. One thing writes at boot: the
+backend re-provisions the four demo stores (database rows and demo images
+under `/root/uploads`) whenever its demo-store definition differs from what is
+stored (`SEED_DEMO_STORES`). A rolled-back backend re-provisions them to the
+older definition. Merchant data is not involved.
+
+### 11.9 Returning to the normal automated deployment
+
+1. Billing restored → in each service repo whose `main` is ahead of §11.1, run
+   **Actions → Build and push … image → Run workflow** on `main` (or push a
+   commit) and wait for it to pass.
+2. Confirm CI built at least the commit production runs (droplet):
+   `docker buildx imagetools inspect ghcr.io/jonayedahmed/<repo>:<full sha of origin/main>`
+   must find the image.
+3. Go back to `:latest` and the normal flow:
+
+   ```bash
+   cd /root/storebaze-deploy
+   sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=latest/' /root/.env
+   docker compose pull && docker compose up -d
+   ```
+
+4. Repeat §11.7, then remove the manual images:
+   `docker images --format '{{.Repository}}:{{.Tag}}' | grep ':manual-' | xargs -r docker rmi`
+5. Remove the status note at the top of this file. From here on, deploy with
+   §5 only.
+
+### 11.10 What must never be touched
+
+No step of the fallback reads, moves or deletes persistent data. Anything that
+would is outside this procedure and needs its own decision.
+
+| Persistent thing | Where | Never |
+|---|---|---|
+| Merchant/customer uploads | `/root/uploads` (bind mount, owned by uid 1001) | `rm`, `chown`, re-mounting, baking into an image |
+| TLS certificates + ACME account | `storebaze_caddy_data` / `storebaze_caddy_config` volumes | `docker compose down -v`, `docker volume rm` / `prune`, `docker system prune --volumes` |
+| Caddy | `storebaze-caddy` container, `/root/storebaze-deploy/Caddyfile` | restart, recreate, rebuild, edit, `git pull` over it |
+| Secrets | `/root/envs/*/.env.production`, `/root/.env` | copying off the droplet, printing, editing — the one exception is the `IMAGE_TAG` line of `/root/.env` |
+| Database | MongoDB Atlas (external) | any script, seed or migration run by hand as part of a deploy |
