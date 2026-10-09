@@ -523,10 +523,11 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** Written 2026-10-09 from a read-only inspection of production. The
-procedure has **not yet been run end to end** — §11.2 lists what is verified
-and what the first run still has to prove. Update this line after the first
-run.
+**Status.** In use. First run 2026-10-09, release `manual-20261009-2050`
+(backend `9809022`, merchant-fe `74d61b9`, landing `b1ee5e7`; control-panel
+unchanged at `d723576`): it worked end to end as written here, with no
+rollback. Production now runs with `IMAGE_TAG=manual-20261009-2050`; the
+previous release is still on the droplet as `:latest`.
 
 ### 11.1 Why this exists
 
@@ -571,14 +572,12 @@ Alternatives looked at and not used:
   would silently put the stale GHCR image back. A separate release tag makes
   that pull fail loudly instead.
 
-| Verified on 2026-10-09 (read-only) | Not yet exercised — the first run proves it |
+| Verified by inspection, 2026-10-09 | Proved by the first run, 2026-10-09 |
 |---|---|
-| GHCR `:latest` is the same digest as the commits in §11.1; newer commits have no image; pulls with the droplet's existing login still work | Build time and stability of the emulated `linux/amd64` build on an Apple Silicon laptop |
-| The four `NEXT_PUBLIC_*` values in the droplet's merchant-fe env file are the ones baked into the image running today (Stripe key compared by hash) | The `docker save` → `docker load` round trip between Docker Desktop and the droplet |
-| `/root/.env` has `IMAGE_TAG=latest`; with a release tag compose resolves all four service images to it and leaves `storebaze-caddy:local` alone (`config --images`) | The `IMAGE_TAG` switch and targeted `up -d` (flags checked against Compose v5.1.4's help, not run) |
-| The `prod` / `penv` helpers and every read-only check in §11.6–11.7 return what this section says | |
-| Recreating backend + merchant-fe does not restart Caddy (observed: both recreated 2026-10-09, Caddy up since June) | |
-| No cron job, timer or watcher on the droplet pulls or restarts containers | |
+| GHCR `:latest` is the same digest as the commits in §11.1; newer commits have no image; pulls with the droplet's existing login still work | The emulated `linux/amd64` build on an Apple Silicon laptop (Docker Desktop 28.5) is quick: backend 13 s, landing 43 s, merchant-fe 106 s |
+| The four `NEXT_PUBLIC_*` values in the droplet's merchant-fe env file are the ones baked into the image that was running (Stripe key compared by hash) | `docker save` → `docker load` is lossless: the image IDs on the droplet equal the laptop's; about 17 s per image |
+| `/root/.env` holds `IMAGE_TAG`; with a release tag compose resolves all four service images to it and leaves `storebaze-caddy:local` alone (`config --images`) | The `IMAGE_TAG` switch and targeted `up -d` recreate exactly the named services; `--dry-run` shows the same list beforehand |
+| No cron job, timer or watcher on the droplet pulls or restarts containers | Caddy is not restarted (same container, started in June); the API answered 4 s after the backend was recreated, the sites 4 s after the frontends |
 
 ### 11.3 Prerequisites
 
@@ -685,9 +684,9 @@ copy an env file to the laptop and never read anything but `NEXT_PUBLIC_*`
 keys this way — those are public (they ship in the browser bundle); the rest
 of each file is secret.
 
-If the emulated build is too slow or crashes, run the same `build` on any
-x86-64 Linux machine with Docker and at least 4 GB of RAM (drop `--platform`).
-**Not on the production droplet.**
+Should the emulated build ever be too slow or crash, run the same `build` on
+any x86-64 Linux machine with Docker and at least 4 GB of RAM (drop
+`--platform`). **Not on the production droplet.**
 
 ### 11.5 Transfer (laptop → droplet image store; nothing restarts)
 
@@ -832,7 +831,9 @@ older definition. Merchant data is not involved.
 
 1. Billing restored → in each service repo whose `main` is ahead of §11.1, run
    **Actions → Build and push … image → Run workflow** on `main` (or push a
-   commit) and wait for it to pass.
+   commit) and wait for it to pass. Nothing in the service repos or their
+   workflows was changed for the fallback, and nothing was pushed to GHCR, so
+   CI picks up exactly where it stopped.
 2. Confirm CI built at least the commit production runs (droplet):
    `docker buildx imagetools inspect ghcr.io/jonayedahmed/<repo>:<full sha of origin/main>`
    must find the image.
