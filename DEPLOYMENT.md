@@ -523,11 +523,17 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use. First run 2026-10-09, release `manual-20261009-2050`
-(backend `9809022`, merchant-fe `74d61b9`, landing `b1ee5e7`; control-panel
-unchanged at `d723576`): it worked end to end as written here, with no
-rollback. Production now runs with `IMAGE_TAG=manual-20261009-2050`; the
-previous release is still on the droplet as `:latest`.
+**Status.** In use; two releases so far, both end to end as written here, with
+no rollback.
+
+| Release | Date | backend | merchant-fe | landing | control-panel |
+|---|---|---|---|---|---|
+| `manual-20261009-2050` | 2026-10-09 | `9809022` | `74d61b9` | `b1ee5e7` | `d723576` (CI image) |
+| `manual-20261009-2155` | 2026-10-09 | `dd23971` | `5b72d24` | `6ca2f51` | `d723576` (CI image) |
+
+Production runs `IMAGE_TAG=manual-20261009-2155`. The rollback kept on the
+droplet is `:latest`, the last CI build; the first manual release was removed
+once the second was healthy (§11.8).
 
 ### 11.1 Why this exists
 
@@ -813,13 +819,30 @@ switch in reverse and takes seconds:
 
 ```bash
 cd /root/storebaze-deploy
-sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=<PREV>/' /root/.env    # `latest` after the first manual release
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=<PREV>/' /root/.env    # a release still on the droplet: `latest`, or a kept manual one
 docker compose up -d --no-deps --pull never backend merchant-fe landing
 ```
 
 Then repeat §11.7. `:latest` is also still on GHCR, so
 `docker compose pull` (with `IMAGE_TAG=latest`) restores it if the local copy
 was ever removed.
+
+**Older manual releases.** Once a newer manual release is confirmed healthy,
+the one before it can go. Remove its four tags by name — never with a prune —
+and keep `:latest`:
+
+```bash
+OLD=manual-YYYYMMDD-HHMM                    # the release before the current one
+grep '^IMAGE_TAG=' /root/.env               # must NOT be $OLD
+docker ps --format '{{.Image}}' | grep ":$OLD" && echo "STOP: still running"
+for r in storebaze-merchant-mt-be storebaze-merchant-mt-fe storebaze-landing control-panel; do
+  docker rmi ghcr.io/jonayedahmed/$r:$OLD
+done
+```
+
+`docker rmi` without `-f` refuses an image a container still uses. For a
+service that was not rebuilt, the tag is only an alias of the image it runs,
+so removing it deletes nothing.
 
 Rollback returns the **code**, not the data. One thing writes at boot: the
 backend re-provisions the four demo stores (database rows and demo images
