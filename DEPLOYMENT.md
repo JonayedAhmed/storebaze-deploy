@@ -523,17 +523,18 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; two releases so far, both end to end as written here, with
+**Status.** In use; three releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
 |---|---|---|---|---|---|
 | `manual-20261009-2050` | 2026-10-09 | `9809022` | `74d61b9` | `b1ee5e7` | `d723576` (CI image) |
 | `manual-20261009-2155` | 2026-10-09 | `dd23971` | `5b72d24` | `6ca2f51` | `d723576` (CI image) |
+| `manual-20261010-0008` | 2026-10-10 | `3e6b4a0` | `d9cb12c` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 
-Production runs `IMAGE_TAG=manual-20261009-2155`. The rollback kept on the
-droplet is `:latest`, the last CI build; the first manual release was removed
-once the second was healthy (§11.8).
+Production runs `IMAGE_TAG=manual-20261010-0008`. The rollback kept on the
+droplet is `:latest`, the last CI build; each earlier manual release was
+removed once the next was healthy (§11.8).
 
 ### 11.1 Why this exists
 
@@ -834,15 +835,18 @@ and keep `:latest`:
 ```bash
 OLD=manual-YYYYMMDD-HHMM                    # the release before the current one
 grep '^IMAGE_TAG=' /root/.env               # must NOT be $OLD
-docker ps --format '{{.Image}}' | grep ":$OLD" && echo "STOP: still running"
 for r in storebaze-merchant-mt-be storebaze-merchant-mt-fe storebaze-landing control-panel; do
   docker rmi ghcr.io/jonayedahmed/$r:$OLD
 done
 ```
 
-`docker rmi` without `-f` refuses an image a container still uses. For a
-service that was not rebuilt, the tag is only an alias of the image it runs,
-so removing it deletes nothing.
+`docker rmi` without `-f` refuses to delete an image a container still uses,
+so a rebuilt service's old image goes only once nothing runs it. For a service
+that was not rebuilt, the old tag is an alias of the image it still runs under
+the current tag: removing it deletes nothing. If that container was created
+under the old tag, `docker ps` then lists it by image id instead of by name
+until the service is next recreated — the same image, still tagged with the
+current release.
 
 Rollback returns the **code**, not the data. One thing writes at boot: the
 backend re-provisions the four demo stores (database rows and demo images
