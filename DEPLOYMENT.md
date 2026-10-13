@@ -4,11 +4,16 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-09 — GitHub Actions is unavailable (account billing
-> lock).** Until it is back, deploy with the temporary manual fallback in
+> **Status, 2026-10-13 — GitHub Actions is unavailable (account billing
+> lock), so CI/CD is temporarily blocked.** Production runs the manual release
+> `manual-20261010-0320`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
-> The GitHub Actions → GHCR → production deployment described in §5 remains
-> the normal/default method. Remove this note when CI/CD is back (§11.9).
+> The CI-built `:latest` images of all four services are kept on the droplet
+> on purpose: they are the rollback, and `:latest` is the tag production
+> returns to. The GitHub Actions → GHCR → `:latest` → production deployment
+> described in §5 remains the normal/default method and resumes as soon as
+> Actions works again (§11.9). An older manual release is removed once its
+> replacement is healthy (§11.8). Remove this note when CI/CD is back.
 
 ---
 
@@ -414,6 +419,11 @@ docker image prune -f                  # remove dangling images
 docker system prune -af --volumes      # nuclear — frees most space
 ```
 
+> While the manual fallback is in use (§11), do **not** run the second command
+> or `docker image prune -a`: they delete every image no container is running,
+> which includes the `:latest` images kept as the rollback. Clean up by name
+> instead (§11.8).
+
 ---
 
 ## 7. Backups
@@ -523,7 +533,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; three releases so far, all end to end as written here, with
+**Status.** In use; four releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -531,10 +541,26 @@ no rollback.
 | `manual-20261009-2050` | 2026-10-09 | `9809022` | `74d61b9` | `b1ee5e7` | `d723576` (CI image) |
 | `manual-20261009-2155` | 2026-10-09 | `dd23971` | `5b72d24` | `6ca2f51` | `d723576` (CI image) |
 | `manual-20261010-0008` | 2026-10-10 | `3e6b4a0` | `d9cb12c` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
+| `manual-20261010-0320` | 2026-10-10 | `106153b` | `8f091df` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 
-Production runs `IMAGE_TAG=manual-20261010-0008`. The rollback kept on the
-droplet is `:latest`, the last CI build; each earlier manual release was
-removed once the next was healthy (§11.8).
+**Production runs `IMAGE_TAG=manual-20261010-0320`** (checked 2026-10-13). The
+three releases before it have been removed from the droplet.
+
+**Two deployment paths, both kept.** CI/CD is blocked, not retired. The droplet
+therefore holds one current manual release and the CI images, and nothing else:
+
+| On the droplet | What it is | Why it stays |
+|---|---|---|
+| `…:manual-20261010-0320`, all four services | the current manual release | production runs it |
+| `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the rollback (§11.8), and the tag production returns to (§11.9). They are not leftovers: never remove them while the fallback is in use |
+| `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
+
+What does not stay: an older manual release, once its replacement is confirmed
+healthy; any untagged image; any stopped container (§11.8).
+
+When GitHub Actions works again, deployment returns to
+**GitHub Actions → GHCR → `:latest` → production** (§5) by the steps in §11.9,
+and the manual release is removed last.
 
 ### 11.1 Why this exists
 
@@ -549,6 +575,9 @@ returning it. State on 2026-10-09:
 | merchant-fe | `91554eb` | 2026-10-01 00:40 | 35 |
 | landing | `d67c46f` | 2026-09-26 17:43 | 4 |
 | control-panel | `d723576` | 2026-09-17 00:53 | 0 — already current |
+
+Checked again on 2026-10-13: GHCR `:latest` is still these four images, and the
+`:latest` copies on the droplet have the same digests.
 
 The fallback replaces **only** the "Actions builds the image and pushes it to
 GHCR" step. The Dockerfiles, build args, image names, compose file,
@@ -768,8 +797,8 @@ While the fallback is active:
 - A plain `docker compose up -d` is safe, but restarts the unchanged app
   containers once (their image name changed, not their image).
 - Never `docker compose down`, never `--build`, never name `caddy`, never
-  `docker image prune -a` / `docker system prune` — the previous images are
-  the rollback.
+  `docker image prune -a` / `docker system prune` — they delete the `:latest`
+  images, which are the rollback and the way back to CI/CD.
 
 ### 11.7 Verify
 
@@ -829,8 +858,9 @@ Then repeat §11.7. `:latest` is also still on GHCR, so
 was ever removed.
 
 **Older manual releases.** Once a newer manual release is confirmed healthy,
-the one before it can go. Remove its four tags by name — never with a prune —
-and keep `:latest`:
+remove the one before it: the droplet keeps one manual release, the current
+one. Remove its four tags by name — never with a prune — and keep `:latest`,
+which is the CI build, not a manual release:
 
 ```bash
 OLD=manual-YYYYMMDD-HHMM                    # the release before the current one
@@ -848,6 +878,18 @@ under the old tag, `docker ps` then lists it by image id instead of by name
 until the service is next recreated — the same image, still tagged with the
 current release.
 
+Then check that nothing stale is left:
+
+```bash
+docker images --format '{{.Repository}}:{{.Tag}}' | sort   # the current release ×4, :latest ×4, storebaze-caddy:local
+docker images -f dangling=true                             # no rows
+docker ps -a --filter status=exited --filter status=created --format '{{.Names}}'   # no rows
+```
+
+An untagged image or a stopped container that shows up here is removed by its
+id or name (`docker rmi <id>`, `docker rm <name>`) after reading what it is —
+still no prune, and no container is recreated for a cleanup.
+
 Rollback returns the **code**, not the data. One thing writes at boot: the
 backend re-provisions the four demo stores (database rows and demo images
 under `/root/uploads`) whenever its demo-store definition differs from what is
@@ -855,6 +897,10 @@ stored (`SEED_DEMO_STORES`). A rolled-back backend re-provisions them to the
 older definition. Merchant data is not involved.
 
 ### 11.9 Returning to the normal automated deployment
+
+The normal flow is **GitHub Actions → GHCR → `:latest` → production** (§5).
+Everything it needs is still in place: the workflows, the droplet's GHCR login,
+the compose file's `${IMAGE_TAG:-latest}`, and the `:latest` images.
 
 1. Billing restored → in each service repo whose `main` is ahead of §11.1, run
    **Actions → Build and push … image → Run workflow** on `main` (or push a
@@ -874,8 +920,8 @@ older definition. Merchant data is not involved.
 
 4. Repeat §11.7, then remove the manual images:
    `docker images --format '{{.Repository}}:{{.Tag}}' | grep ':manual-' | xargs -r docker rmi`
-5. Remove the status note at the top of this file. From here on, deploy with
-   §5 only.
+5. Remove the status note at the top of this file and mark §11's status as no
+   longer in use. From here on, deploy with §5 only.
 
 ### 11.10 What must never be touched
 
