@@ -4,9 +4,9 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-13 — GitHub Actions is unavailable (account billing
+> **Status, 2026-10-14 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261010-0320`, deployed with the temporary fallback in
+> `manual-20261014-1449`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: they are the rollback, and `:latest` is the tag production
@@ -533,7 +533,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; four releases so far, all end to end as written here, with
+**Status.** In use; five releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -542,16 +542,21 @@ no rollback.
 | `manual-20261009-2155` | 2026-10-09 | `dd23971` | `5b72d24` | `6ca2f51` | `d723576` (CI image) |
 | `manual-20261010-0008` | 2026-10-10 | `3e6b4a0` | `d9cb12c` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 | `manual-20261010-0320` | 2026-10-10 | `106153b` | `8f091df` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
+| `manual-20261014-1449` | 2026-10-14 | `669731c` | `b1ebece` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 
-**Production runs `IMAGE_TAG=manual-20261010-0320`** (checked 2026-10-13). The
-three releases before it have been removed from the droplet.
+**Production runs `IMAGE_TAG=manual-20261014-1449`** (checked 2026-10-14): backend
+`669731c` and merchant-fe `b1ebece` built for it; landing (`6ca2f51`) and
+control-panel (the CI image) were not rebuilt — their existing images carry the
+release tag as an alias (§11.6 step 2) and their containers were not recreated.
+The four releases before it have been removed from the droplet;
+`manual-20261010-0320` was removed on 2026-10-14 once this release was healthy.
 
 **Two deployment paths, both kept.** CI/CD is blocked, not retired. The droplet
 therefore holds one current manual release and the CI images, and nothing else:
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261010-0320`, all four services | the current manual release | production runs it |
+| `…:manual-20261014-1449`, all four services | the current manual release | production runs it |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the rollback (§11.8), and the tag production returns to (§11.9). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
@@ -576,7 +581,8 @@ returning it. State on 2026-10-09:
 | landing | `d67c46f` | 2026-09-26 17:43 | 4 |
 | control-panel | `d723576` | 2026-09-17 00:53 | 0 — already current |
 
-Checked again on 2026-10-13: GHCR `:latest` is still these four images, and the
+Checked again on 2026-10-13 and 2026-10-14: GHCR `:latest` is still these four
+images (no image exists for the commits deployed on 2026-10-14), and the
 `:latest` copies on the droplet have the same digests.
 
 The fallback replaces **only** the "Actions builds the image and pushes it to
