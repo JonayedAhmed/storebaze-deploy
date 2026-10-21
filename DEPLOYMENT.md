@@ -4,16 +4,18 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-14 — GitHub Actions is unavailable (account billing
+> **Status, 2026-10-21 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261014-1449`, deployed with the temporary fallback in
+> `manual-20261021-0857`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
-> on purpose: they are the rollback, and `:latest` is the tag production
-> returns to. The GitHub Actions → GHCR → `:latest` → production deployment
-> described in §5 remains the normal/default method and resumes as soon as
-> Actions works again (§11.9). An older manual release is removed once its
-> replacement is healthy (§11.8). Remove this note when CI/CD is back.
+> on purpose: `:latest` is the tag production returns to. They are **not** a
+> safe rollback for the backend and merchant-fe: they predate the 2026-10-09
+> database reset and every release since (§11.8). The GitHub Actions → GHCR →
+> `:latest` → production deployment described in §5 remains the
+> normal/default method and resumes as soon as Actions works again (§11.9).
+> An older manual release is removed once its replacement is healthy (§11.8).
+> Remove this note when CI/CD is back.
 
 ---
 
@@ -533,7 +535,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; five releases so far, all end to end as written here, with
+**Status.** In use; seven releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -543,21 +545,48 @@ no rollback.
 | `manual-20261010-0008` | 2026-10-10 | `3e6b4a0` | `d9cb12c` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 | `manual-20261010-0320` | 2026-10-10 | `106153b` | `8f091df` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 | `manual-20261014-1449` | 2026-10-14 | `669731c` | `b1ebece` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
+| `manual-20261021-0809` | 2026-10-21 | `b2b8327` | `cf5345a` | `1e02895` | `d723576` (CI image) |
+| `manual-20261021-0857` | 2026-10-21 | `b2b8327` (not rebuilt) | `cf5345a` (not rebuilt) | `ecd8236` | `d723576` (CI image) |
 
-**Production runs `IMAGE_TAG=manual-20261014-1449`** (checked 2026-10-14): backend
-`669731c` and merchant-fe `b1ebece` built for it; landing (`6ca2f51`) and
-control-panel (the CI image) were not rebuilt — their existing images carry the
-release tag as an alias (§11.6 step 2) and their containers were not recreated.
-The four releases before it have been removed from the droplet;
-`manual-20261010-0320` was removed on 2026-10-14 once this release was healthy.
+**Production runs `IMAGE_TAG=manual-20261021-0857`** (checked 2026-10-21), a
+landing-only release: landing `ecd8236` was built for it. Backend (`b2b8327`),
+merchant-fe (`cf5345a`) and control-panel (the CI image) were not rebuilt —
+the images they run carry the release tag as an alias (§11.6 step 2) — and
+only the `landing` container was recreated. `manual-20261021-0809` stays on the
+droplet as the landing rollback (§11.8), so the droplet holds two manual
+releases. The five releases before them have been removed;
+`manual-20261014-1449` was removed on 2026-10-21 once `manual-20261021-0809`
+was healthy.
+
+**The 2026-10-21 releases — what was checked.**
+
+- `manual-20261021-0809` — backend, merchant-fe and landing rebuilt. §11.4–§11.7
+  as written: `linux/amd64` builds of `origin/main`, the same image ids on the
+  laptop and the droplet, the backend healthy 14 s after it was recreated (one
+  502 meanwhile), the frontends serving 4 s after theirs, the demo stores
+  reported up to date at boot (none re-provisioned), Caddy, env files and
+  uploads untouched. Instead of the browser walk-through in §11.7: storefront
+  pages over HTTP and the admin API read as two demo-store owners. Not checked:
+  the Page Builder in a browser, the control-panel login (no platform user
+  exists yet), card payments.
+- `manual-20261021-0857` — landing only. Only `landing` was recreated;
+  storebaze.com answered again 1.3 s later (one 502). On the deployed site, in
+  Chrome and WebKit phone emulation from 320 to 1440 px: no horizontal page
+  overflow, the demo-store row and its links, the hero theme previews, the
+  CTAs, the mobile menu and reduced motion. Backend, merchant-fe, control-panel
+  and Caddy kept running untouched.
+- Known limitation: Stripe runs in test mode; live-mode payment setup is part
+  of the launch checklist.
 
 **Two deployment paths, both kept.** CI/CD is blocked, not retired. The droplet
-therefore holds one current manual release and the CI images, and nothing else:
+therefore holds one current manual release and the CI images, and nothing else
+— on 2026-10-21 also the previous release, kept as the rollback (§11.8):
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261014-1449`, all four services | the current manual release | production runs it |
-| `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the rollback (§11.8), and the tag production returns to (§11.9). They are not leftovers: never remove them while the fallback is in use |
+| `…:manual-20261021-0857`, all four services | the current manual release | production runs it |
+| `…:manual-20261021-0809`, all four services | the previous manual release | the landing rollback; its backend, merchant-fe and control-panel tags are the images production runs (§11.8) |
+| `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
 What does not stay: an older manual release, once its replacement is confirmed
@@ -583,7 +612,9 @@ returning it. State on 2026-10-09:
 
 Checked again on 2026-10-13 and 2026-10-14: GHCR `:latest` is still these four
 images (no image exists for the commits deployed on 2026-10-14), and the
-`:latest` copies on the droplet have the same digests.
+`:latest` copies on the droplet have the same digests. On 2026-10-21 GHCR still
+had no image for the commits deployed that day, and the droplet's `:latest`
+images still had the digests of these four commits' CI builds.
 
 The fallback replaces **only** the "Actions builds the image and pushes it to
 GHCR" step. The Dockerfiles, build args, image names, compose file,
@@ -863,9 +894,21 @@ Then repeat §11.7. `:latest` is also still on GHCR, so
 `docker compose pull` (with `IMAGE_TAG=latest`) restores it if the local copy
 was ever removed.
 
+> **`:latest` is not a safe rollback for the backend and merchant-fe**
+> (checked 2026-10-21). They are CI's builds of backend `23993d2` and
+> merchant-fe `91554eb` from 2026-10-01: 72 and 65 commits behind the
+> 2026-10-21 release, older than the 2026-10-09 database reset, and without
+> the pre-launch fixes; a backend that old also re-provisions the demo stores
+> to its own definition at boot. Roll back to the previous manual release. If
+> it has already been removed from the droplet, send it again from the machine
+> that built it (§11.5, about 20 s per image, no rebuild) and switch to its
+> tag; use `:latest` only as a last resort.
+
 **Older manual releases.** Once a newer manual release is confirmed healthy,
 remove the one before it: the droplet keeps one manual release, the current
-one. Remove its four tags by name — never with a prune — and keep `:latest`,
+one. (2026-10-21: `manual-20261021-0809` was kept after `manual-20261021-0857`
+went live, as the landing rollback — keeping the previous release by default
+is an open decision.) Remove its four tags by name — never with a prune — and keep `:latest`,
 which is the CI build, not a manual release:
 
 ```bash
@@ -896,11 +939,16 @@ An untagged image or a stopped container that shows up here is removed by its
 id or name (`docker rmi <id>`, `docker rm <name>`) after reading what it is —
 still no prune, and no container is recreated for a cleanup.
 
-Rollback returns the **code**, not the data. One thing writes at boot: the
-backend re-provisions the four demo stores (database rows and demo images
-under `/root/uploads`) whenever its demo-store definition differs from what is
+Rollback returns the **code**, not the data. The backend writes at every
+boot: it marks email campaigns cut off mid-send as interrupted, updates the
+four theme records, creates any missing subscription plans and add-ons, and
+re-provisions the four demo stores (database rows and demo images under
+`/root/uploads`) whenever its demo-store definition differs from what is
 stored (`SEED_DEMO_STORES`). A rolled-back backend re-provisions them to the
-older definition. Merchant data is not involved.
+older definition. Apart from interrupted campaigns, merchant data is not
+touched at boot. Its scheduled jobs (reconciliation every 15 min,
+abandoned-cart reminders every 30 min, the account purge at 02:00 UTC) run on
+their schedule, not at boot.
 
 ### 11.9 Returning to the normal automated deployment
 
