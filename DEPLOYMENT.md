@@ -488,7 +488,14 @@ that has `read:packages`.
 **Stripe webhooks 400 with "signature invalid"**
 → The webhook URL on Stripe must be `https://api.storebaze.com/api/webhooks/...`
   AND the matching secret in `/root/envs/storebaze-merchant-mt-be/.env.production`
-  must come from Stripe's dashboard for the **live** endpoint, not test.
+  must be that destination's signing secret, from the **same Stripe mode as
+  `STRIPE_SECRET_KEY`** (sandbox before launch, live after) — two destinations,
+  two secrets: `stripe-connect` ("events from connected accounts") →
+  `STRIPE_CONNECT_WEBHOOK_SECRET`, `stripe-platform` ("events on your account")
+  → `STRIPE_PLATFORM_WEBHOOK_SECRET`. Recreate the backend after changing them.
+  The event lists are in the docs repo, `features/STRIPE-DIRECT-CHARGES.md` §7.
+  Stripe reporting "could not connect" instead means the destination's URL is
+  wrong (Stripe never reached the server).
 
 **Custom merchant domain stuck without HTTPS (Phase 8)**
 → Tail `docker compose logs -f caddy` while hitting the domain. Common causes:
