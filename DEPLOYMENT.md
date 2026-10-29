@@ -4,9 +4,9 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-21 — GitHub Actions is unavailable (account billing
+> **Status, 2026-10-29 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261021-0857`, deployed with the temporary fallback in
+> `manual-20261029-2105`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; seven releases so far, all end to end as written here, with
+**Status.** In use; eight releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -554,8 +554,22 @@ no rollback.
 | `manual-20261014-1449` | 2026-10-14 | `669731c` | `b1ebece` | `6ca2f51` (not rebuilt) | `d723576` (CI image) |
 | `manual-20261021-0809` | 2026-10-21 | `b2b8327` | `cf5345a` | `1e02895` | `d723576` (CI image) |
 | `manual-20261021-0857` | 2026-10-21 | `b2b8327` (not rebuilt) | `cf5345a` (not rebuilt) | `ecd8236` | `d723576` (CI image) |
+| `manual-20261029-2105` | 2026-10-29 | `f911a94` | `e1d05f0` | `7a17b69` | `18256ad` |
 
-**Production runs `IMAGE_TAG=manual-20261021-0857`** (checked 2026-10-21), a
+**Production runs `IMAGE_TAG=manual-20261029-2105`** (2026-10-29): all four
+services rebuilt from `origin/main` (backend `f911a94`, merchant-fe `e1d05f0`,
+landing `7a17b69`, control-panel `18256ad` — the first control-panel image not
+built by CI), on a production database the owner had reset beforehand. The
+backend's first boot created the four themes, the Launch and Scale plans (from
+`scripts/seedPlans.js`, already in the per-currency fee shape — so
+`scripts/applyFreeLaunchPricing.js` was **not** run), the Email Pack add-on and
+the four demo stores. `manual-20261021-0857` stays on the droplet as the code
+rollback; `manual-20261021-0809` was removed. **Rollback caveat:** the plans
+created by this release store `transactionFeeFixed` per currency; the
+`0857` backend (`b2b8327`) expects a single number, so rolling the backend back
+needs the plan records rewritten first — roll forward instead where possible.
+
+Before that, production ran `manual-20261021-0857` (checked 2026-10-21), a
 landing-only release: landing `ecd8236` was built for it. Backend (`b2b8327`),
 merchant-fe (`cf5345a`) and control-panel (the CI image) were not rebuilt —
 the images they run carry the release tag as an alias (§11.6 step 2) — and
@@ -564,6 +578,21 @@ droplet as the landing rollback (§11.8), so the droplet holds two manual
 releases. The five releases before them have been removed;
 `manual-20261014-1449` was removed on 2026-10-21 once `manual-20261021-0809`
 was healthy.
+
+**The 2026-10-29 release — what was checked.** §11.4–§11.7 as written: the
+four `linux/amd64` builds of `origin/main` (backend 27 s, merchant-fe 53 s,
+landing 12 s, control-panel 33 s), the same image ids on the laptop and the
+droplet, the merchant-fe bundle carrying the API URL and the Stripe key, the
+backend healthy within seconds of being recreated (restarts 0), then the three
+frontends; Caddy, env files and uploads untouched. storebaze.com, www,
+api `/health` 200, control 307 → `/login`; the four demo storefronts with their
+own titles and `api 200`; an unknown store `404`. Read-only checks: the plans as
+Billing serves them (Launch free, 1.5% + CA$0.45 / US$0.30, 250 products,
+900K AI credits for 30 days, 1,500 emails; Scale CA$99 / US$79, 0%, 5,000,
+1.5M monthly, 10,000), a demo owner's admin (dashboard, Billing, Settings) with
+every browser write blocked, the landing's pricing and Terms copy, the sign-up
+and login pages. Stripe stays in test mode; Google / Apple sign-in are not
+configured in production (sign-up offers email only).
 
 **The 2026-10-21 releases — what was checked.**
 
@@ -591,8 +620,8 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261021-0857`, all four services | the current manual release | production runs it |
-| `…:manual-20261021-0809`, all four services | the previous manual release | the landing rollback; its backend, merchant-fe and control-panel tags are the images production runs (§11.8) |
+| `…:manual-20261029-2105`, all four services | the current manual release | production runs it |
+| `…:manual-20261021-0857`, all four services | the previous manual release | the code rollback (see the caveat above) |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
