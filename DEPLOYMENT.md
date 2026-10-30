@@ -6,7 +6,7 @@ and Caddy.
 
 > **Status, 2026-10-30 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261030-0206`, deployed with the temporary fallback in
+> `manual-20261030-0650`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; nine releases so far, all end to end as written here, with
+**Status.** In use; eleven releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -556,8 +556,32 @@ no rollback.
 | `manual-20261021-0857` | 2026-10-21 | `b2b8327` (not rebuilt) | `cf5345a` (not rebuilt) | `ecd8236` | `d723576` (CI image) |
 | `manual-20261029-2105` | 2026-10-29 | `f911a94` | `e1d05f0` | `7a17b69` | `18256ad` |
 | `manual-20261030-0206` | 2026-10-30 | `f911a94` (not rebuilt) | `9f215e2` | `0a521bc` | `5720f82` |
+| `manual-20261030-0635` | 2026-10-30 | `4a5753a` | `de5bb61` | `0a521bc` (not rebuilt) | `5720f82` (not rebuilt) |
+| `manual-20261030-0650` | 2026-10-30 | `4a5753a` (not rebuilt) | `de5bb61` (not rebuilt) | `37deb89` | `5720f82` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261030-0206`** (2026-10-30), the StoreBaze
+**Production runs `IMAGE_TAG=manual-20261030-0650`** (2026-10-30), the Nodeon
+release, deployed in two steps. `manual-20261030-0635` rebuilt the backend
+(`4a5753a`: the Nodeon demo as a premium audio store, with a new hero
+photograph) and merchant-fe (`de5bb61`: the Tech theme's product card and
+footer, and the Page Builder fixes that went with it) and recreated only those
+two; at boot the backend re-provisioned demo-tech alone (`provisioned: 1,
+up-to-date: 3` — the other demo stores untouched). `manual-20261030-0650` then
+rebuilt and recreated only the landing (`37deb89`: the Tech theme's hero and
+showcase shots re-captured from the live store). At the owner's request the
+backend env file gained two empty lines, `GOOGLE_CLIENT_ID=` and
+`GOOGLE_CLIENT_SECRET=`, for the owner to fill in (backed up first; nothing else
+in it changed; no Apple variables) — Google sign-in stays hidden while either
+is empty, and needs the backend recreated once both are set (§11.6 step 3,
+backend only). Control-panel, Caddy, uploads and the rest of the database were
+not touched. Checked on the live sites: the new hero served byte for byte and
+shown on demo-tech with the audio collection, the other three demo stores
+unchanged, the three Tech shots on storebaze.com byte for byte in the hero's
+frames and the showcase card, both Google variables present and empty in the
+running backend, restarts 0, no backend errors. `manual-20261030-0206` stays as
+the rollback (rolling the backend back re-provisions demo-tech as the earlier
+store at its next boot); the `0635` tags and `manual-20261029-2105` were removed.
+
+Before that, production ran `manual-20261030-0206` (2026-10-30), the StoreBaze
 favicon release: merchant-fe `9f215e2` (the `/admin` loader's mark), landing
 `0a521bc` (favicon + the mark beside the navbar wordmark) and control-panel
 `5720f82` (favicon) rebuilt; the backend (`f911a94`) alias-tagged and **not**
@@ -634,8 +658,8 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261030-0206`, all four services | the current manual release | production runs it (the backend container still lists the `2105` tag — same image) |
-| `…:manual-20261029-2105`, all four services | the previous manual release | the rollback for the three frontends; its backend image is the one production runs |
+| `…:manual-20261030-0650`, all four services | the current manual release | production runs it (backend and merchant-fe were created under the removed `0635` tag — same images) |
+| `…:manual-20261030-0206`, all four services | the previous manual release | the rollback |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
