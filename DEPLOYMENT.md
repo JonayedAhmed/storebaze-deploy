@@ -6,7 +6,7 @@ and Caddy.
 
 > **Status, 2026-10-30 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261030-0650`, deployed with the temporary fallback in
+> `manual-20261030-1824`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; eleven releases so far, all end to end as written here, with
+**Status.** In use; twelve releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -558,8 +558,29 @@ no rollback.
 | `manual-20261030-0206` | 2026-10-30 | `f911a94` (not rebuilt) | `9f215e2` | `0a521bc` | `5720f82` |
 | `manual-20261030-0635` | 2026-10-30 | `4a5753a` | `de5bb61` | `0a521bc` (not rebuilt) | `5720f82` (not rebuilt) |
 | `manual-20261030-0650` | 2026-10-30 | `4a5753a` (not rebuilt) | `de5bb61` (not rebuilt) | `37deb89` | `5720f82` (not rebuilt) |
+| `manual-20261030-1824` | 2026-10-30 | `7886c5b` | `de5bb61` (not rebuilt) | `2428e0a` | `5720f82` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261030-0650`** (2026-10-30), the Nodeon
+**Production runs `IMAGE_TAG=manual-20261030-1824`** (2026-10-30). Rebuilt and
+recreated, backend first: the backend (`7886c5b`: a new store's business
+address starts in its billing country, still the merchant's to edit and never
+copied back into billing) and the landing (`2428e0a`: the StoreBaze mark beside
+the wordmark on sign-up, log-in and every onboarding step; pointer, hover and
+focus states on their buttons; the Payment step's country field reads "Country
+of business registration"). Merchant-fe and control-panel were alias-tagged
+from `0650` and not recreated (their containers still list the `0635` / `0206`
+tags — same images). The backend answered `/health` 14 s after it was
+recreated; at boot plans and add-ons created nothing and the demo stores
+reported `provisioned: 0, up-to-date: 4`. The landing served again 2 s after
+its recreate. Caddy, env files, uploads and the database were not touched; no
+data was migrated (existing stores keep their address). Checked on the live
+sites: storebaze.com, www, api `/health` 200, control 307; the four demo stores
+with their own titles and `api 200`, an unknown store `404`; `/signup` and
+`/login` showing the mark and the Google button (providers report Google on,
+Apple off); restarts 0, no backend errors. `manual-20261030-0650` stays as the
+rollback. `manual-20261030-0206` is still on the droplet: its removal (§11.8)
+waits for the owner.
+
+Before that, production ran `IMAGE_TAG=manual-20261030-0650` (2026-10-30), the Nodeon
 release, deployed in two steps. `manual-20261030-0635` rebuilt the backend
 (`4a5753a`: the Nodeon demo as a premium audio store, with a new hero
 photograph) and merchant-fe (`de5bb61`: the Tech theme's product card and
@@ -658,8 +679,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261030-0650`, all four services | the current manual release | production runs it (backend and merchant-fe were created under the removed `0635` tag — same images) |
-| `…:manual-20261030-0206`, all four services | the previous manual release | the rollback |
+| `…:manual-20261030-1824`, all four services | the current manual release | production runs it (merchant-fe and control-panel were created under the `0635` / `0206` tags — same images) |
+| `…:manual-20261030-0650`, all four services | the previous manual release | the rollback |
+| `…:manual-20261030-0206`, all four services | the release before that | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
