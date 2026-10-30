@@ -6,7 +6,7 @@ and Caddy.
 
 > **Status, 2026-10-30 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261030-1902`, deployed with the temporary fallback in
+> `manual-20261030-1936`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; thirteen releases so far, all end to end as written here, with
+**Status.** In use; fourteen releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -560,8 +560,29 @@ no rollback.
 | `manual-20261030-0650` | 2026-10-30 | `4a5753a` (not rebuilt) | `de5bb61` (not rebuilt) | `37deb89` | `5720f82` (not rebuilt) |
 | `manual-20261030-1824` | 2026-10-30 | `7886c5b` | `de5bb61` (not rebuilt) | `2428e0a` | `5720f82` (not rebuilt) |
 | `manual-20261030-1902` | 2026-10-30 | `7886c5b` (not rebuilt) | `de5bb61` (not rebuilt) | `67f2612` | `5720f82` (not rebuilt) |
+| `manual-20261030-1936` | 2026-10-30 | `7886c5b` (not rebuilt) | `c8ec01c` | `4339aa2` | `e7c2ee7` |
 
-**Production runs `IMAGE_TAG=manual-20261030-1902`** (2026-10-30), landing only:
+**Production runs `IMAGE_TAG=manual-20261030-1936`** (2026-10-30), a dependency
+security release of the three Next.js apps: Next.js 16.4.3 (merchant-fe from
+16.0.3, landing and control-panel from 16.2.3), React / React DOM 19.2.9 and,
+with them, sharp 0.35.5 — the patched versions for the published Next.js
+advisories, including the critical remote-code-execution ones. No application
+code changed. The backend was alias-tagged from `1902` after checking its
+container runs that exact image, and not recreated; only `merchant-fe`,
+`landing` and `control-panel` were, and each answered again within 3 s. Caddy,
+env files, uploads and the database were not touched. Checked before the
+switch: each image runs Next.js 16.4.3 and loads sharp's musl binary; the new
+merchant-fe image, run locally against the live API, rendered the four demo
+stores like production; landing and control-panel pages pixel-identical to
+production. Checked after: the four demo stores (api 200, home, products,
+about, FAQ and contact pages, screenshots identical to before), the admin of
+two demo stores signed in as their owners with every write request blocked in
+the browser (dashboard, orders, products, sales, inventory, pages, Page
+Builder, appearance, email, settings, billing — no page errors), the landing's
+pages and optimized images, and the control-panel login. `manual-20261030-1902`
+stays as the rollback.
+
+Before that, production ran `IMAGE_TAG=manual-20261030-1902` (2026-10-30), landing only:
 `67f2612` (robots.txt and sitemap.xml from the app, canonical URLs, link-preview
 cards, the home page's JSON-LD, a `/features` page, noindex on the sign-up steps
 after `/signup`, and the new positioning copy). Backend, merchant-fe and
@@ -693,9 +714,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261030-1902`, all four services | the current manual release | production runs it (backend, merchant-fe and control-panel were created under the `1824` / `0635` / `0206` tags — same images) |
-| `…:manual-20261030-1824`, all four services | the previous manual release | the rollback |
-| `…:manual-20261030-0650` and `…:manual-20261030-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
+| `…:manual-20261030-1936`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag — same image) |
+| `…:manual-20261030-1902`, all four services | the previous manual release | the rollback |
+| `…:manual-20261030-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
