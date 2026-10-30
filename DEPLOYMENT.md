@@ -4,9 +4,9 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-29 — GitHub Actions is unavailable (account billing
+> **Status, 2026-10-30 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261029-2105`, deployed with the temporary fallback in
+> `manual-20261030-0206`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; eight releases so far, all end to end as written here, with
+**Status.** In use; nine releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -555,16 +555,30 @@ no rollback.
 | `manual-20261021-0809` | 2026-10-21 | `b2b8327` | `cf5345a` | `1e02895` | `d723576` (CI image) |
 | `manual-20261021-0857` | 2026-10-21 | `b2b8327` (not rebuilt) | `cf5345a` (not rebuilt) | `ecd8236` | `d723576` (CI image) |
 | `manual-20261029-2105` | 2026-10-29 | `f911a94` | `e1d05f0` | `7a17b69` | `18256ad` |
+| `manual-20261030-0206` | 2026-10-30 | `f911a94` (not rebuilt) | `9f215e2` | `0a521bc` | `5720f82` |
 
-**Production runs `IMAGE_TAG=manual-20261029-2105`** (2026-10-29): all four
+**Production runs `IMAGE_TAG=manual-20261030-0206`** (2026-10-30), the StoreBaze
+favicon release: merchant-fe `9f215e2` (the `/admin` loader's mark), landing
+`0a521bc` (favicon + the mark beside the navbar wordmark) and control-panel
+`5720f82` (favicon) rebuilt; the backend (`f911a94`) alias-tagged and **not**
+recreated — its container still lists the `2105` tag, same image. Only the
+three frontends were recreated; Caddy, env files, uploads and the database
+untouched. Checked on the live sites: the official SVG served byte for byte on
+storebaze.com, control and a store host; the landing header from 320 to
+1440 px (mark + unsqueezed wordmark, nothing overlapped); the control panel's
+head icons and no `favicon.ico`; a demo storefront keeping its own favicon; the
+`/admin` loader showing the new mark (a demo owner, browser writes blocked).
+`manual-20261029-2105` stays as the rollback; `manual-20261021-0857` was removed.
+
+Before that, production ran `manual-20261029-2105` (2026-10-29): all four
 services rebuilt from `origin/main` (backend `f911a94`, merchant-fe `e1d05f0`,
 landing `7a17b69`, control-panel `18256ad` — the first control-panel image not
 built by CI), on a production database the owner had reset beforehand. The
 backend's first boot created the four themes, the Launch and Scale plans (from
 `scripts/seedPlans.js`, already in the per-currency fee shape — so
 `scripts/applyFreeLaunchPricing.js` was **not** run), the Email Pack add-on and
-the four demo stores. `manual-20261021-0857` stays on the droplet as the code
-rollback; `manual-20261021-0809` was removed. **Rollback caveat:** the plans
+the four demo stores. (`manual-20261021-0809` was removed then; `0857` on
+2026-10-30.) **Rollback caveat:** the plans
 created by this release store `transactionFeeFixed` per currency; the
 `0857` backend (`b2b8327`) expects a single number, so rolling the backend back
 needs the plan records rewritten first — roll forward instead where possible.
@@ -620,8 +634,8 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261029-2105`, all four services | the current manual release | production runs it |
-| `…:manual-20261021-0857`, all four services | the previous manual release | the code rollback (see the caveat above) |
+| `…:manual-20261030-0206`, all four services | the current manual release | production runs it (the backend container still lists the `2105` tag — same image) |
+| `…:manual-20261029-2105`, all four services | the previous manual release | the rollback for the three frontends; its backend image is the one production runs |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
