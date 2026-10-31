@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; fourteen releases so far, all end to end as written here, with
+**Status.** In use; fifteen releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -561,8 +561,26 @@ no rollback.
 | `manual-20261030-1824` | 2026-10-30 | `7886c5b` | `de5bb61` (not rebuilt) | `2428e0a` | `5720f82` (not rebuilt) |
 | `manual-20261030-1902` | 2026-10-30 | `7886c5b` (not rebuilt) | `de5bb61` (not rebuilt) | `67f2612` | `5720f82` (not rebuilt) |
 | `manual-20261030-1936` | 2026-10-30 | `7886c5b` (not rebuilt) | `c8ec01c` | `4339aa2` | `e7c2ee7` |
+| `manual-20261031-0306` | 2026-10-31 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `1d82190` | `e7c2ee7` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261030-1936`** (2026-10-30), a dependency
+**Production runs `IMAGE_TAG=manual-20261031-0306`** (2026-10-31), landing only:
+`1d82190`, which also ships `90451d9` and `7913401` (committed after `4339aa2`,
+not deployed until now) — favicons Google can show and `/favicon.ico`, the
+brand in the home page title, the `/compare` page with its FAQ entry, footer
+link and sitemap entry, and under the feature grid a two-column block,
+"Everything works together.", beside the feature-grid illustration. Backend,
+merchant-fe and control-panel were alias-tagged from `1936` after checking
+each container runs that exact image, and not recreated; only `landing` was,
+and storebaze.com answered again within a second. Caddy, env files, uploads
+and the database were not touched. Checked on the live site: storebaze.com,
+`/features`, `/compare`, `/signup`, `/login`, `/terms`, `/favicon.ico`,
+sitemap.xml and robots.txt 200, www 301, api `/health` 200, control 307; the
+four demo stores with their own titles and `api 200`; the illustration served
+byte for byte as committed and as optimized WebP; the home page in a browser
+from 320 to 1440 px (no horizontal overflow, no page errors); landing restarts
+0, no backend errors. `manual-20261030-1936` stays as the rollback.
+
+Before that, production ran `IMAGE_TAG=manual-20261030-1936` (2026-10-30), a dependency
 security release of the three Next.js apps: Next.js 16.4.3 (merchant-fe from
 16.0.3, landing and control-panel from 16.2.3), React / React DOM 19.2.9 and,
 with them, sharp 0.35.5 — the patched versions for the published Next.js
@@ -714,9 +732,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261030-1936`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag — same image) |
-| `…:manual-20261030-1902`, all four services | the previous manual release | the rollback |
-| `…:manual-20261030-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
+| `…:manual-20261031-0306`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag, merchant-fe and control-panel under `1936` — same images) |
+| `…:manual-20261030-1936`, all four services | the previous manual release | the rollback |
+| `…:manual-20261030-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
