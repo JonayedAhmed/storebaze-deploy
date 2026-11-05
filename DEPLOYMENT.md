@@ -4,9 +4,9 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-10-30 — GitHub Actions is unavailable (account billing
+> **Status, 2026-11-05 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261030-1936`, deployed with the temporary fallback in
+> `manual-20261105-0831`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; fifteen releases so far, all end to end as written here, with
+**Status.** In use; sixteen releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -562,8 +562,20 @@ no rollback.
 | `manual-20261030-1902` | 2026-10-30 | `7886c5b` (not rebuilt) | `de5bb61` (not rebuilt) | `67f2612` | `5720f82` (not rebuilt) |
 | `manual-20261030-1936` | 2026-10-30 | `7886c5b` (not rebuilt) | `c8ec01c` | `4339aa2` | `e7c2ee7` |
 | `manual-20261031-0306` | 2026-10-31 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `1d82190` | `e7c2ee7` (not rebuilt) |
+| `manual-20261105-0831` | 2026-11-05 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `4c91b02` | `e7c2ee7` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261031-0306`** (2026-10-31), landing only:
+**Production runs `IMAGE_TAG=manual-20261105-0831`** (2026-11-05), landing only:
+`4c91b02` hides, at the owner's request and for now, the "Start building for
+free" buttons (header, closing section, Launch pricing card) and "Choose
+Scale" (flags in the landing's `lib/landingCtas.js`); prices, plan details,
+`/signup` and `/login` unchanged. Backend, merchant-fe and control-panel were
+alias-tagged from `0306` after checking each container runs that exact image,
+and not recreated; only `landing` was. Checked on the live site from 320 to
+1440 px on `/`, `/features` and `/compare`: neither label shown, header items
+fit, pricing cards intact, no horizontal overflow, no page errors; `/signup`
+and `/login` 200; api `/health` 200. `manual-20261031-0306` is the rollback.
+
+Before that, production ran `manual-20261031-0306` (2026-10-31), landing only:
 `1d82190`, which also ships `90451d9` and `7913401` (committed after `4339aa2`,
 not deployed until now) — favicons Google can show and `/favicon.ico`, the
 brand in the home page title, the `/compare` page with its FAQ entry, footer
@@ -732,9 +744,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261031-0306`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag, merchant-fe and control-panel under `1936` — same images) |
-| `…:manual-20261030-1936`, all four services | the previous manual release | the rollback |
-| `…:manual-20261030-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
+| `…:manual-20261105-0831`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag, merchant-fe and control-panel under `1936` — same images) |
+| `…:manual-20261031-0306`, all four services | the previous manual release | the rollback |
+| `…:manual-20261030-1936`, `…-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
