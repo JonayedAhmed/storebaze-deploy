@@ -4,9 +4,9 @@ End-to-end guide for deploying the four StoreBaze services to a single
 DigitalOcean droplet using GitHub Container Registry (GHCR), Docker Compose,
 and Caddy.
 
-> **Status, 2026-11-05 — GitHub Actions is unavailable (account billing
+> **Status, 2026-11-06 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261105-0842`, deployed with the temporary fallback in
+> `manual-20261106-2234`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; seventeen releases so far, all end to end as written here, with
+**Status.** In use; eighteen releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -564,8 +564,33 @@ no rollback.
 | `manual-20261031-0306` | 2026-10-31 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `1d82190` | `e7c2ee7` (not rebuilt) |
 | `manual-20261105-0831` | 2026-11-05 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `4c91b02` | `e7c2ee7` (not rebuilt) |
 | `manual-20261105-0842` | 2026-11-05 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `5850cae` | `e7c2ee7` (not rebuilt) |
+| `manual-20261106-2234` | 2026-11-06 | `7886c5b` (not rebuilt) | `5bdd076` | `5850cae` (not rebuilt) | `e7c2ee7` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261105-0842`** (2026-11-05), landing only:
+**Production runs `IMAGE_TAG=manual-20261106-2234`** (2026-11-06 22:37 UTC),
+merchant-fe only: `5bdd076` (with `628712d`) — the shop (`/products`) and
+journal (`/blog`) pages of all four themes take the store's page Background
+from Appearance, their text at WCAG AA on it and on each theme's own canvas
+(the themes' faint greys and browns darkened just enough; Organic's "New Item
+Alert" and "Out of Stock" badges readable), and dark filled buttons outlined
+on a dark Background. Backend, landing and control-panel were alias-tagged
+from `0842` after checking each container runs that exact image, and not
+recreated; only `merchant-fe` was, and the storefront answered again 2 s
+later. Caddy, env files, uploads and the database were not touched. Checked
+before the switch: the new image, run locally against the live API, rendered
+the four demo stores' shop and journal with their saved Backgrounds. Checked
+after, on the live sites: storebaze.com 200, www 301, api `/health` 200,
+control 307; the four demo stores with their own titles and `api 200`, an
+unknown store `404`; in a browser, `/products` and `/blog` of the four
+demo stores at 1280 and 390 px painting their saved Background, no text
+under AA, no horizontal overflow, no page errors, no failed requests;
+category filter, price sort, product and article links, the phone filter
+drawer and pagination (shown by a browser-only page-config rewrite) working,
+every API write blocked in the browser; `/admin` routes loading to sign-in
+(not signed in: sign-in writes the user's last-login time). Restarts 0, no
+backend errors. GHCR had no image for `5bdd076` (Actions still builds
+nothing). `manual-20261105-0842` is the rollback.
+
+Before that, production ran `manual-20261105-0842` (2026-11-05), landing only:
 `5850cae` also hides the hero's "Start for free" (a third flag in
 `lib/landingCtas.js`); "Explore Demo Stores" and the rest of the hero
 unchanged. Same procedure as `0831` below: the other three alias-tagged from
@@ -754,9 +779,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261105-0842`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag, merchant-fe and control-panel under `1936` — same images) |
-| `…:manual-20261105-0831`, all four services | the previous manual release | the rollback |
-| `…:manual-20261031-0306`, `…:manual-20261030-1936`, `…-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
+| `…:manual-20261106-2234`, all four services | the current manual release | production runs it (the backend was created under the `1824` tag, control-panel under `1936`, landing under `0842` — same images) |
+| `…:manual-20261105-0842`, all four services | the previous manual release | the rollback |
+| `…:manual-20261105-0831`, `…:manual-20261031-0306`, `…:manual-20261030-1936`, `…-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
