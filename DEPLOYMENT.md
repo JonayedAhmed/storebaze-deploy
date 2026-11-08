@@ -6,7 +6,7 @@ and Caddy.
 
 > **Status, 2026-11-08 — GitHub Actions is unavailable (account billing
 > lock), so CI/CD is temporarily blocked.** Production runs the manual release
-> `manual-20261108-0725`, deployed with the temporary fallback in
+> `manual-20261108-1725`, deployed with the temporary fallback in
 > [§11](#11-temporary-manual-deployment-fallback--github-actions-unavailable).
 > The CI-built `:latest` images of all four services are kept on the droplet
 > on purpose: `:latest` is the tag production returns to. They are **not** a
@@ -542,7 +542,7 @@ docker compose restart <svc>   # bounce one service
 > normal/default deployment method. Once GitHub billing is restored, stop
 > using the manual fallback and resume CI/CD** (§11.9).
 
-**Status.** In use; nineteen releases so far, all end to end as written here, with
+**Status.** In use; twenty releases so far, all end to end as written here, with
 no rollback.
 
 | Release | Date | backend | merchant-fe | landing | control-panel |
@@ -566,8 +566,29 @@ no rollback.
 | `manual-20261105-0842` | 2026-11-05 | `7886c5b` (not rebuilt) | `c8ec01c` (not rebuilt) | `5850cae` | `e7c2ee7` (not rebuilt) |
 | `manual-20261106-2234` | 2026-11-06 | `7886c5b` (not rebuilt) | `5bdd076` | `5850cae` (not rebuilt) | `e7c2ee7` (not rebuilt) |
 | `manual-20261108-0725` | 2026-11-08 | `c340238` | `ac4ac98` | `5850cae` (not rebuilt) | `e7c2ee7` (not rebuilt) |
+| `manual-20261108-1725` | 2026-11-08 | `3a5c700` | `ac4ac98` (not rebuilt) | `5850cae` (not rebuilt) | `e7c2ee7` (not rebuilt) |
 
-**Production runs `IMAGE_TAG=manual-20261108-0725`** (2026-11-08 07:30 UTC),
+**Production runs `IMAGE_TAG=manual-20261108-1725`** (2026-11-08 17:28 UTC),
+backend only: `3a5c700` — the Page Builder's AI agent is given the store's
+page Background (white included) and told to leave text colours to the theme
+on it; the onboarding AI's instructions no longer say the shop and checkout
+pages are light (its light-page rule itself is unchanged). Merchant-fe,
+landing and control-panel were alias-tagged from `0725` after checking each
+container runs that exact image, and not recreated. The backend answered
+`/api/health` 14 s after it was recreated (one 502 meanwhile); at boot it
+refreshed the theme records as usual, created no plans or add-ons and
+reported the four demo stores up to date (none re-provisioned). Caddy, env
+files, uploads and the database were not touched; no migration. Checked
+before the switch: the five AI prompt and critic smokes (451 checks, offline)
+inside the release image. Checked after: storebaze.com 200, www 301, api
+`/health` 200, control 307; the four demo stores with their own titles and
+`api 200`, an unknown store `404`; the Page Builder agent endpoint refuses a
+request without a sign-in (401; no AI call was made). The running backend
+has the release image's id and the commit's revision label, restarts 0, no
+errors. GHCR had no image for the commit (Actions still builds nothing).
+`manual-20261108-0725` is the rollback.
+
+Before that, production ran `manual-20261108-0725` (2026-11-08 07:30 UTC),
 backend and merchant-fe together. Backend `c340238` (with `bccd094`): journal
 drafts are readable only by staff who manage the journal; password-reset code
 checks are limited per reset and by failed checks per address instead of per
@@ -809,9 +830,9 @@ therefore holds one current manual release and the CI images, and nothing else
 
 | On the droplet | What it is | Why it stays |
 |---|---|---|
-| `…:manual-20261108-0725`, all four services | the current manual release | production runs it (backend and merchant-fe were created under this tag, control-panel under `1936`, landing under `0842` — same images) |
-| `…:manual-20261106-2234`, all four services | the previous manual release | the rollback |
-| `…:manual-20261105-0842`, `…:manual-20261105-0831`, `…:manual-20261031-0306`, `…:manual-20261030-1936`, `…-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
+| `…:manual-20261108-1725`, all four services | the current manual release | production runs it (the backend was created under this tag, merchant-fe under `0725`, control-panel under `1936`, landing under `0842` — same images) |
+| `…:manual-20261108-0725`, all four services | the previous manual release | the rollback |
+| `…:manual-20261106-2234`, `…:manual-20261105-0842`, `…:manual-20261105-0831`, `…:manual-20261031-0306`, `…:manual-20261030-1936`, `…-1902`, `…-1824`, `…-0650` and `…-0206`, all four services | older releases | not removed yet (§11.8) — waiting for the owner |
 | `…:latest`, all four services | the last images GitHub Actions built (§11.1) | kept on purpose — the tag production returns to (§11.9), and a last resort only: not a compatible rollback for backend + merchant-fe (§11.8). They are not leftovers: never remove them while the fallback is in use |
 | `storebaze-caddy:local` | Caddy, built on the droplet | Caddy runs it |
 
